@@ -1,5 +1,9 @@
 /**
  * GameScene - main gameplay scene for Candy Run
+ *
+ * Level system: collect `goal` candies to clear the level. Higher levels add
+ * more worms and make them faster. The player has hearts (lives) carried
+ * between levels; losing them all ends the run.
  */
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -7,24 +11,34 @@ class GameScene extends Phaser.Scene {
     this.TILE = 64;          // tile size in pixels
     this.MAZE_COLS = 21;     // must be odd
     this.MAZE_ROWS = 21;     // must be odd
-    this.score = 0;
-    this.candyPitchIndex = 0;
     this.candyPitches = [261, 294, 329, 349, 392, 440, 494, 523]; // C major scale Hz
+  }
+
+  init(data) {
+    data = data || {};
+    this.level = data.level || 1;
+    this.hearts = (data.hearts != null) ? data.hearts : 3;
+    this.score = 0;
+    this.goal = Math.min(15 + (this.level - 1) * 5, 30);
+    this.candyPitchIndex = 0;
+    this.frozen = false;              // true during clear / game-over sequence
+    this.playerInvincibleUntil = 0;   // grace period after being caught
   }
 
   // ─────────────────────────────────────────────
   //  PRELOAD
   // ─────────────────────────────────────────────
   preload() {
-    // Try to load user-provided assets; on error fall back to generated textures
+    // TitleScene normally loads these already; kept here as a safety net.
     this.load.on('loaderror', (file) => {
       console.warn(`Asset not found: ${file.key}, using placeholder`);
     });
-
-    this.load.image('player',       'assets/player.png');
-    this.load.image('worm_head',    'assets/worm_head.png');
-    this.load.image('worm_body',    'assets/worm_body.png');
-    this.load.image('worm_tail',    'assets/worm_tail.png');
+    this.load.image('player',    'assets/player.png');
+    this.load.image('worm_head', 'assets/worm_head.png');
+    this.load.image('worm_body', 'assets/worm_body.png');
+    this.load.image('worm_tail', 'assets/worm_tail.png');
+    this.load.image('wall',      'assets/wall.png');
+    this.load.image('heart',     'assets/heart.png');
     for (let i = 1; i <= 5; i++) {
       this.load.image(`item${i}`, `assets/item${i}.png`);
     }
@@ -53,7 +67,7 @@ class GameScene extends Phaser.Scene {
     const H = this.MAZE_ROWS * this.TILE;
 
     // Generate placeholder textures for any missing assets
-    this._generatePlaceholders();
+    TextureFactory.createAll(this);
 
     // Build maze
     const gen = new MazeGenerator(this.MAZE_COLS, this.MAZE_ROWS);
@@ -66,8 +80,9 @@ class GameScene extends Phaser.Scene {
     this._buildMaze(W, H);
 
     // Place candies on passage tiles
+    const passages = gen.getPassageTiles(this.TILE);
     this.candies = this.physics.add.staticGroup();
-    this._placeCandies(gen.getPassageTiles(this.TILE));
+    this._placeCandies(passages);
 
     // Touch joystick for mobile (stays hidden / no-op on desktop)
     this.touchControls = new TouchControls(this);
@@ -76,9 +91,14 @@ class GameScene extends Phaser.Scene {
     const start = gen.getStartPosition(this.TILE);
     this.player = new Player(this, start.x, start.y, this.TILE);
 
-    // Worm enemy — start far from player
-    const wormStart = this._getFarTile(start, gen.getPassageTiles(this.TILE));
-    this.worm = new Worm(this, wormStart.x, wormStart.y, this.TILE, 4);
+    // Worms — count and speed grow with the level
+    this.worms = [];
+    const wormCount = Math.min(1 + Math.floor((this.level - 1) / 2), 3);
+    const wormSpeed = Math.min(80 + this.level * 8, 140);
+    const spots = this._pickFarTiles(start, passages, wormCount);
+    for (let i = 0; i < wormCount; i++) {
+      this.worms.push(new Worm(this, spots[i].x, spots[i].y, this.TILE, 4, wormSpeed));
+    }
 
     // Collider: player vs walls
     this.physics.add.collider(this.player.sprite, this.wallGroup);
@@ -95,137 +115,118 @@ class GameScene extends Phaser.Scene {
     // Camera — smooth follow
     this.cameras.main.setBounds(0, 0, W, H);
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
+    this.cameras.main.fadeIn(300, 26, 10, 46);
 
     // UI (fixed to camera)
     this._createUI();
+    this._showLevelBanner();
 
-    // Bloom-like post fx (Phaser 3.60 pipeline)
-    try {
-      this.cameras.main.setPostPipeline('BloomPipeline');
-    } catch (e) {
-      // BloomPipeline not available — skip silently
-    }
+    this.scale.on('resize', this._layoutUI, this);
+    this.events.once('shutdown', () => {
+      this.scale.off('resize', this._layoutUI, this);
+    });
 
-    // AudioContext for procedural sfx
+    // AudioContext unlock (must happen on a user gesture) + BGM loop
     this.audioCtx = null;
-    this.input.once('pointerdown', () => { this._initAudio(); });
-    this.input.keyboard.once('keydown', () => { this._initAudio(); });
+    const unlock = () => { this._initAudio(); };
+    this.input.once('pointerdown', unlock);
+    if (this.input.keyboard) this.input.keyboard.once('keydown', unlock);
+
+    this.bgmStep = 0;
+    this.time.addEvent({ delay: 230, loop: true, callback: this._bgmTick, callbackScope: this });
   }
 
   // ─────────────────────────────────────────────
   //  UPDATE
   // ─────────────────────────────────────────────
   update() {
-    // Skip if initialization didn't complete (avoids per-frame errors).
-    if (!this.player || !this.worm) return;
+    // Skip while init is incomplete or during clear/game-over sequences.
+    if (this.frozen || !this.player || !this.worms) return;
 
     this.player.update();
-    this.worm.update(this.player.x, this.player.y);
 
-    // Check catch
-    if (this.worm.isCatching(this.player.x, this.player.y)) {
-      this.worm.onCatch();
-      this._bouncePlayerToSafety();
+    const px = this.player.x;
+    const py = this.player.y;
+    const invincible = this.time.now < this.playerInvincibleUntil;
+
+    for (const worm of this.worms) {
+      worm.update(px, py);
+      if (!invincible && worm.isCatching(px, py)) {
+        this._onCaught(worm);
+        break;
+      }
     }
   }
 
   // ─────────────────────────────────────────────
-  //  HELPERS
+  //  GAME FLOW
   // ─────────────────────────────────────────────
 
-  _generatePlaceholders() {
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
-    const T = this.TILE;
+  _onCaught(worm) {
+    worm.onCatch();
+    this.hearts--;
+    this._updateHearts();
+    this._playCatchSound();
+    this.cameras.main.shake(200, 0.008);
 
-    const make = (key, drawFn) => {
-      if (!this.textures.exists(key)) {
-        g.clear();
-        drawFn(g);
-        g.generateTexture(key, T, T);
-      }
-    };
+    if (this.hearts <= 0) {
+      this.frozen = true;
+      this.player.sprite.body.setVelocity(0, 0);
+      this.time.delayedCall(900, () => {
+        this.scene.start('ResultScene', {
+          won: false, level: this.level, collected: this.score
+        });
+      });
+      return;
+    }
 
-    // Player: pink circle with face
-    make('player', (g) => {
-      g.fillStyle(0xff88cc);
-      g.fillCircle(T/2, T/2, T*0.38);
-      g.fillStyle(0x000000);
-      g.fillCircle(T*0.38, T*0.42, T*0.05);
-      g.fillCircle(T*0.62, T*0.42, T*0.05);
-      g.fillStyle(0xff4488);
-      g.fillEllipse(T/2, T*0.6, T*0.25, T*0.1);
+    // Brief invincibility + blink, then continue from a safe spot
+    this.playerInvincibleUntil = this.time.now + 2000;
+    this.tweens.add({
+      targets: this.player.sprite,
+      alpha: 0.3, duration: 120, yoyo: true, repeat: 7,
+      onComplete: () => { this.player.sprite.alpha = 1; }
     });
+    this._bouncePlayerToSafety();
+  }
 
-    // Worm head: green circle with eyes
-    make('worm_head', (g) => {
-      g.fillStyle(0x66cc44);
-      g.fillCircle(T/2, T/2, T*0.38);
-      g.fillStyle(0xffffff);
-      g.fillCircle(T*0.38, T*0.44, T*0.1);
-      g.fillCircle(T*0.62, T*0.44, T*0.1);
-      g.fillStyle(0x000000);
-      g.fillCircle(T*0.38, T*0.44, T*0.05);
-      g.fillCircle(T*0.62, T*0.44, T*0.05);
-    });
+  _onLevelClear() {
+    this.frozen = true;
+    this.player.sprite.body.setVelocity(0, 0);
+    this._playClearJingle();
 
-    // Worm body: rounded lime segment
-    make('worm_body', (g) => {
-      g.fillStyle(0x88dd44);
-      g.fillRoundedRect(T*0.12, T*0.12, T*0.76, T*0.76, T*0.2);
-    });
+    const txt = this.add.text(this.scale.width / 2, this.scale.height / 2, 'クリア！', {
+      fontSize: '52px', fontFamily: CANDY_FONT,
+      color: '#ffffff', stroke: '#ff66aa', strokeThickness: 10
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(300).setScale(0);
+    this.tweens.add({ targets: txt, scale: 1, duration: 400, ease: 'Back.easeOut' });
 
-    // Worm tail: small pointed segment
-    make('worm_tail', (g) => {
-      g.fillStyle(0xaaee66);
-      g.fillTriangle(T/2, T*0.15, T*0.2, T*0.85, T*0.8, T*0.85);
-    });
-
-    // Candy items 1-5: different colored stars/circles
-    const candyColors = [0xff4466, 0xff9922, 0xffdd00, 0x44cc88, 0x8866ff];
-    const candyShapes = ['circle', 'star', 'circle', 'star', 'circle'];
-    for (let i = 1; i <= 5; i++) {
-      make(`item${i}`, (g) => {
-        g.fillStyle(candyColors[i - 1]);
-        if (candyShapes[i - 1] === 'circle') {
-          g.fillCircle(T/2, T/2, T*0.32);
-          g.fillStyle(0xffffff, 0.4);
-          g.fillCircle(T*0.38, T*0.36, T*0.1);
-        } else {
-          // Simple 5-point star
-          this._drawStar(g, T/2, T/2, 5, T*0.32, T*0.14);
-          g.fillStyle(0xffffff, 0.3);
-          g.fillCircle(T*0.38, T*0.36, T*0.08);
-        }
+    // Star burst around the clear text
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const star = this.add.image(this.scale.width / 2, this.scale.height / 2, 'particle_star')
+        .setScrollFactor(0).setDepth(299).setDisplaySize(22, 22)
+        .setTint([0xffff66, 0xff88cc, 0x88ffee][i % 3]);
+      this.tweens.add({
+        targets: star,
+        x: star.x + Math.cos(angle) * 130,
+        y: star.y + Math.sin(angle) * 130,
+        alpha: 0, angle: 180,
+        duration: 900, ease: 'Power2',
+        onComplete: () => star.destroy()
       });
     }
 
-    // Particle textures
-    make('particle_star', (g) => {
-      g.fillStyle(0xffffff);
-      this._drawStar(g, T/2, T/2, 4, T*0.4, T*0.2);
+    this.time.delayedCall(1800, () => {
+      this.scene.start('ResultScene', {
+        won: true, level: this.level, hearts: this.hearts, collected: this.score
+      });
     });
-
-    make('particle_heart', (g) => {
-      g.fillStyle(0xff69b4);
-      // Simple heart using two circles + triangle
-      g.fillCircle(T*0.35, T*0.38, T*0.17);
-      g.fillCircle(T*0.65, T*0.38, T*0.17);
-      g.fillTriangle(T*0.18, T*0.44, T*0.82, T*0.44, T/2, T*0.78);
-    });
-
-    g.destroy();
   }
 
-  _drawStar(g, cx, cy, points, outerR, innerR) {
-    const step = Math.PI / points;
-    const pts = [];
-    for (let i = 0; i < points * 2; i++) {
-      const r = i % 2 === 0 ? outerR : innerR;
-      const angle = i * step - Math.PI / 2;
-      pts.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
-    }
-    g.fillPoints(pts, true);
-  }
+  // ─────────────────────────────────────────────
+  //  WORLD BUILDING
+  // ─────────────────────────────────────────────
 
   _drawBackground(W, H) {
     // Pastel gradient via RenderTexture
@@ -248,10 +249,9 @@ class GameScene extends Phaser.Scene {
   _buildMaze(W, H) {
     this.wallGroup = this.physics.add.staticGroup();
 
-    const g = this.add.graphics();
-    g.setDepth(-1);
-
-    // Wall colors: candy pastels
+    // If a wall.png was provided, tile it; otherwise draw candy-colored blocks.
+    const useWallTexture = this.textures.exists('wall');
+    const g = useWallTexture ? null : this.add.graphics().setDepth(-1);
     const wallColors = [0xff88aa, 0xffaa66, 0xffdd88, 0x88ddff, 0xcc88ff];
 
     for (let row = 0; row < this.MAZE_ROWS; row++) {
@@ -259,15 +259,20 @@ class GameScene extends Phaser.Scene {
         if (this.mazeGrid[row][col] === 0) {
           const x = col * this.TILE;
           const y = row * this.TILE;
-          const color = wallColors[(row * this.MAZE_COLS + col) % wallColors.length];
 
-          // Draw decorative wall tile
-          g.fillStyle(color);
-          g.fillRoundedRect(x + 2, y + 2, this.TILE - 4, this.TILE - 4, 8);
-          g.lineStyle(2, 0xffffff, 0.3);
-          g.strokeRoundedRect(x + 2, y + 2, this.TILE - 4, this.TILE - 4, 8);
+          if (useWallTexture) {
+            this.add.image(x + this.TILE / 2, y + this.TILE / 2, 'wall')
+              .setDisplaySize(this.TILE, this.TILE)
+              .setDepth(-1);
+          } else {
+            const color = wallColors[(row * this.MAZE_COLS + col) % wallColors.length];
+            g.fillStyle(color);
+            g.fillRoundedRect(x + 2, y + 2, this.TILE - 4, this.TILE - 4, 8);
+            g.lineStyle(2, 0xffffff, 0.3);
+            g.strokeRoundedRect(x + 2, y + 2, this.TILE - 4, this.TILE - 4, 8);
+          }
 
-          // Add invisible physics body
+          // Invisible physics body
           const body = this.add.zone(x + this.TILE / 2, y + this.TILE / 2, this.TILE, this.TILE);
           this.physics.world.enable(body, Phaser.Physics.Arcade.STATIC_BODY);
           this.wallGroup.add(body);
@@ -304,7 +309,25 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  _pickFarTiles(nearPos, tiles, count) {
+    const far = tiles.filter(t =>
+      Phaser.Math.Distance.Between(nearPos.x, nearPos.y, t.x, t.y) > this.TILE * 8
+    );
+    const pool = far.length >= count ? far : tiles;
+    const shuffled = Phaser.Utils.Array.Shuffle([...pool]);
+    const picked = [];
+    for (let i = 0; i < count; i++) {
+      picked.push(shuffled[i % shuffled.length]);
+    }
+    return picked;
+  }
+
+  // ─────────────────────────────────────────────
+  //  CANDY COLLECTION
+  // ─────────────────────────────────────────────
+
   _collectCandy(playerSprite, candy) {
+    if (this.frozen) return;
     this.score++;
     this.candyPitchIndex = Math.min(this.candyPitchIndex + 1, this.candyPitches.length - 1);
 
@@ -322,16 +345,9 @@ class GameScene extends Phaser.Scene {
       onComplete: () => candy.destroy()
     });
 
-    // Sparkle burst
     this._spawnSparkle(cx, cy);
-
-    // Score popup
     this._showScorePopup(cx, cy);
-
-    // Update score UI
     this._updateScoreText();
-
-    // Play ascending pitch sfx
     this._playPickupSound(this.candyPitches[this.candyPitchIndex - 1]);
 
     // Reset pitch index after pause
@@ -339,6 +355,10 @@ class GameScene extends Phaser.Scene {
     this._pitchResetTimer = this.time.delayedCall(2000, () => {
       this.candyPitchIndex = 0;
     });
+
+    if (this.score >= this.goal) {
+      this._onLevelClear();
+    }
   }
 
   _spawnSparkle(x, y) {
@@ -381,18 +401,17 @@ class GameScene extends Phaser.Scene {
   }
 
   _bouncePlayerToSafety() {
-    // Find a passage tile at least 5 tiles away from the worm head
+    // Find a passage tile at least 5 tiles away from every worm head
     const passages = [];
     for (let row = 1; row < this.MAZE_ROWS - 1; row++) {
       for (let col = 1; col < this.MAZE_COLS - 1; col++) {
         if (this.mazeGrid[row][col] === 1) {
           const wx = col * this.TILE + this.TILE / 2;
           const wy = row * this.TILE + this.TILE / 2;
-          const dx = wx - this.worm.head.x;
-          const dy = wy - this.worm.head.y;
-          if (Math.sqrt(dx * dx + dy * dy) > this.TILE * 5) {
-            passages.push({ x: wx, y: wy });
-          }
+          const safeFromAll = this.worms.every(w =>
+            Phaser.Math.Distance.Between(wx, wy, w.head.x, w.head.y) > this.TILE * 5
+          );
+          if (safeFromAll) passages.push({ x: wx, y: wy });
         }
       }
     }
@@ -416,54 +435,77 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  _getFarTile(nearPos, tiles) {
-    let best = tiles[0];
-    let bestDist = 0;
-    for (const t of tiles) {
-      const d = Phaser.Math.Distance.Between(nearPos.x, nearPos.y, t.x, t.y);
-      if (d > bestDist) { bestDist = d; best = t; }
-    }
-    return best;
-  }
+  // ─────────────────────────────────────────────
+  //  UI
+  // ─────────────────────────────────────────────
 
   _createUI() {
-    const cam = this.cameras.main;
-    const padding = 16;
+    const pad = 12;
 
-    // Semi-transparent rounded panel
-    this.uiPanel = this.add
-      .graphics()
-      .setScrollFactor(0)
-      .setDepth(100);
+    // Semi-transparent rounded panel (top-left): level, candy progress
+    this.uiPanel = this.add.graphics().setScrollFactor(0).setDepth(100);
+    this.uiPanel.fillStyle(0xffffff, 0.5);
+    this.uiPanel.fillRoundedRect(pad, pad, 216, 86, 18);
 
-    this.uiPanel.fillStyle(0xffffff, 0.45);
-    this.uiPanel.fillRoundedRect(padding, padding, 260, 64, 20);
+    this.levelText = this.add.text(pad + 16, pad + 10, `レベル ${this.level}`, {
+      fontSize: '14px', fontFamily: CANDY_FONT, color: '#9944cc'
+    }).setScrollFactor(0).setDepth(101);
 
-    // Score label
-    this.scoreLabelText = this.add.text(padding + 16, padding + 10,
-      'あつめた おかし', {
-        fontSize: '16px',
-        fontFamily: 'Hiragino Maru Gothic Pro, Meiryo, Arial, sans-serif',
-        color: '#cc44aa'
-      }
-    ).setScrollFactor(0).setDepth(101);
+    this.scoreValueText = this.add.text(pad + 16, pad + 28, `🍬 0 / ${this.goal}`, {
+      fontSize: '22px', fontFamily: CANDY_FONT,
+      color: '#ff2288', stroke: '#ffffff', strokeThickness: 3
+    }).setScrollFactor(0).setDepth(101);
 
-    // Score value
-    this.scoreValueText = this.add.text(padding + 16, padding + 30,
-      '🍬 0こ', {
-        fontSize: '22px',
-        fontFamily: 'Hiragino Maru Gothic Pro, Meiryo, Arial, sans-serif',
-        color: '#ff2288',
-        stroke: '#ffffff',
-        strokeThickness: 3
-      }
-    ).setScrollFactor(0).setDepth(101);
+    this.progressG = this.add.graphics().setScrollFactor(0).setDepth(101);
+    this._drawProgress();
+
+    // Hearts (top-right)
+    this.heartIcons = [];
+    const heartKey = this.textures.exists('heart') ? 'heart' : 'particle_heart';
+    for (let i = 0; i < 3; i++) {
+      this.heartIcons.push(
+        this.add.image(0, 0, heartKey)
+          .setScrollFactor(0).setDepth(101).setDisplaySize(30, 30)
+      );
+    }
+
+    // Mute toggle (top-right, under the hearts)
+    this.muteBtn = this.add.text(0, 0, this.registry.get('muted') ? '🔇' : '🔊', {
+      fontSize: '26px'
+    }).setScrollFactor(0).setDepth(101).setInteractive({ useHandCursor: true });
+    this.muteBtn.on('pointerdown', (pointer, lx, ly, event) => {
+      if (event) event.stopPropagation(); // keep the joystick from appearing
+      this._toggleMute();
+    });
+
+    this._layoutUI();
+    this._updateHearts();
+  }
+
+  _layoutUI() {
+    if (!this.heartIcons) return;
+    const w = this.scale.width;
+    this.heartIcons.forEach((h, i) => h.setPosition(w - 26 - i * 36, 30));
+    this.muteBtn.setPosition(w - 44, 52);
+  }
+
+  _drawProgress() {
+    const pad = 12;
+    const x = pad + 16, y = pad + 62, w = 184, h = 12;
+    const ratio = Phaser.Math.Clamp(this.score / this.goal, 0, 1);
+    this.progressG.clear();
+    this.progressG.fillStyle(0xffffff, 0.7);
+    this.progressG.fillRoundedRect(x, y, w, h, 6);
+    if (ratio > 0) {
+      this.progressG.fillStyle(0xff66aa, 1);
+      this.progressG.fillRoundedRect(x, y, Math.max(w * ratio, 12), h, 6);
+    }
   }
 
   _updateScoreText() {
-    this.scoreValueText.setText(`🍬 ${this.score}こ`);
+    this.scoreValueText.setText(`🍬 ${this.score} / ${this.goal}`);
+    this._drawProgress();
 
-    // Bounce effect on score
     this.tweens.add({
       targets: this.scoreValueText,
       scaleX: 1.3,
@@ -474,31 +516,90 @@ class GameScene extends Phaser.Scene {
     });
   }
 
+  _updateHearts() {
+    this.heartIcons.forEach((h, i) => h.setAlpha(i < this.hearts ? 1 : 0.25));
+  }
+
+  _showLevelBanner() {
+    const txt = this.add.text(this.scale.width / 2, this.scale.height / 2, `レベル ${this.level}`, {
+      fontSize: '42px', fontFamily: CANDY_FONT,
+      color: '#ffffff', stroke: '#ff66aa', strokeThickness: 8
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(300).setScale(0);
+    this.tweens.add({
+      targets: txt, scale: 1, duration: 400, ease: 'Back.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: txt, alpha: 0, delay: 700, duration: 400,
+          onComplete: () => txt.destroy()
+        });
+      }
+    });
+  }
+
   // ─────────────────────────────────────────────
-  //  AUDIO (Web Audio API procedural sfx)
+  //  AUDIO (Web Audio API procedural sfx + BGM)
   // ─────────────────────────────────────────────
+
   _initAudio() {
     if (this.audioCtx) return;
     try {
-      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Reuse one AudioContext across level restarts (browsers cap how many
+      // can exist, especially iOS Safari).
+      if (!window.__candyAudioCtx) {
+        window.__candyAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      this.audioCtx = window.__candyAudioCtx;
+      if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
     } catch (e) { /* no audio */ }
   }
 
-  _playPickupSound(freq) {
+  _playTone(freq, dur, type, vol, slideTo, when) {
     if (!this.audioCtx) return;
     try {
       const ctx = this.audioCtx;
+      const t = ctx.currentTime + (when || 0);
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, ctx.currentTime + 0.12);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.25);
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t);
+      osc.stop(t + dur);
     } catch (e) { /* ignore */ }
+  }
+
+  _playPickupSound(freq) {
+    if (this.registry.get('muted')) return;
+    this._playTone(freq, 0.25, 'sine', 0.25, freq * 1.5);
+  }
+
+  _playCatchSound() {
+    if (this.registry.get('muted')) return;
+    this._playTone(300, 0.4, 'sawtooth', 0.12, 110);
+  }
+
+  _playClearJingle() {
+    if (this.registry.get('muted')) return;
+    [523, 659, 784, 1046].forEach((f, i) => {
+      this._playTone(f, 0.25, 'sine', 0.2, null, i * 0.13);
+    });
+  }
+
+  _bgmTick() {
+    const melody = [523, 0, 659, 0, 784, 0, 880, 784, 659, 0, 587, 659, 523, 0, 0, 0];
+    const f = melody[this.bgmStep % melody.length];
+    this.bgmStep++;
+    if (!f || !this.audioCtx || this.registry.get('muted') || this.frozen) return;
+    this._playTone(f, 0.18, 'triangle', 0.05);
+  }
+
+  _toggleMute() {
+    const muted = !this.registry.get('muted');
+    this.registry.set('muted', muted);
+    this.muteBtn.setText(muted ? '🔇' : '🔊');
   }
 }

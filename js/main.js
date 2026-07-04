@@ -17,7 +17,7 @@ const config = {
       debug: false
     }
   },
-  scene: [GameScene],
+  scene: [TitleScene, GameScene, ResultScene],
   scale: {
     // RESIZE fills the whole screen (phone / tablet / desktop). Phaser measures
     // the #game parent, so it self-corrects even if the initial size was off.

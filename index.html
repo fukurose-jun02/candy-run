@@ -2,24 +2,39 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Candy Run - Escape & Collect</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #1a0a2e;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      overflow: hidden;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
     }
-    canvas { display: block; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #1a0a2e;
+      overscroll-behavior: none;
+    }
+    #game {
+      width: 100%;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+      touch-action: none;
+    }
   </style>
 </head>
 <body>
+  <div id="game"></div>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
   <script src="js/MazeGenerator.js"></script>
+  <script src="js/TouchControls.js"></script>
   <script src="js/Player.js"></script>
   <script src="js/Worm.js"></script>
   <script src="js/scenes/GameScene.js"></script>

@@ -59,7 +59,8 @@ class TitleScene extends Phaser.Scene {
         Phaser.Math.Between(20, W - 20),
         Phaser.Math.Between(20, H - 20),
         `item${(i % 5) + 1}`
-      ).setDisplaySize(36, 36).setAlpha(0.8);
+      ).setAlpha(0.8);
+      c.setScale(36 / Math.max(c.width, c.height)); // keep aspect ratio
       this.root.add(c);
       this.tweens.add({
         targets: c,
@@ -89,12 +90,16 @@ class TitleScene extends Phaser.Scene {
 
     // Player being chased by the worm
     const cy = H * 0.52;
-    const player = this.add.image(W / 2 - 60, cy, 'player').setDisplaySize(76, 76);
+    const fit = (img, size) => {
+      img.setScale(size / Math.max(img.width, img.height)); // keep aspect ratio
+      return img;
+    };
+    const player = fit(this.add.image(W / 2 - 60, cy, 'player'), 84);
     const segs = [
-      this.add.image(W / 2 + 50,  cy + 6, 'worm_head').setDisplaySize(54, 54).setRotation(-Math.PI / 2),
-      this.add.image(W / 2 + 88,  cy + 10, 'worm_body').setDisplaySize(46, 46),
-      this.add.image(W / 2 + 120, cy + 12, 'worm_body').setDisplaySize(42, 42),
-      this.add.image(W / 2 + 150, cy + 14, 'worm_tail').setDisplaySize(38, 38).setRotation(Math.PI / 2)
+      fit(this.add.image(W / 2 + 50,  cy + 6, 'worm_head'), 54).setRotation(-Math.PI / 2),
+      fit(this.add.image(W / 2 + 88,  cy + 10, 'worm_body'), 46),
+      fit(this.add.image(W / 2 + 120, cy + 12, 'worm_body'), 42),
+      fit(this.add.image(W / 2 + 150, cy + 14, 'worm_tail'), 38).setRotation(Math.PI / 2)
     ];
     this.root.add([player, ...segs]);
     this.tweens.add({

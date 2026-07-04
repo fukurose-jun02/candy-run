@@ -34,6 +34,21 @@ class GameScene extends Phaser.Scene {
   //  CREATE
   // ─────────────────────────────────────────────
   create() {
+    try {
+      this._create();
+    } catch (err) {
+      // Never leave the player staring at a blank screen: log, surface the
+      // message on the page, and draw it in-canvas too.
+      console.error('GameScene create failed:', err);
+      if (window.__gameError) window.__gameError('ゲームの初期化に失敗しました: ' + err.message);
+      this.add.text(20, 20, 'エラー: ' + err.message, {
+        fontSize: '16px', color: '#ffffff', backgroundColor: '#aa0044',
+        padding: { x: 10, y: 8 }, wordWrap: { width: this.scale.width - 40 }
+      }).setScrollFactor(0).setDepth(9999);
+    }
+  }
+
+  _create() {
     const W = this.MAZE_COLS * this.TILE;
     const H = this.MAZE_ROWS * this.TILE;
 
@@ -101,6 +116,9 @@ class GameScene extends Phaser.Scene {
   //  UPDATE
   // ─────────────────────────────────────────────
   update() {
+    // Skip if initialization didn't complete (avoids per-frame errors).
+    if (!this.player || !this.worm) return;
+
     this.player.update();
     this.worm.update(this.player.x, this.player.y);
 

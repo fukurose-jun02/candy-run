@@ -87,6 +87,14 @@ class Player {
       vy *= 0.7071;
     }
 
+    // Touch joystick (mobile) overrides keyboard when active.
+    // Its vector is analog (magnitude 0..1) so it's already speed-limited.
+    const touch = this.scene.touchControls && this.scene.touchControls.getVector();
+    if (touch && (touch.x !== 0 || touch.y !== 0)) {
+      vx = touch.x * this.speed;
+      vy = touch.y * this.speed;
+    }
+
     sprite.body.setVelocity(vx, vy);
 
     // Flip sprite based on horizontal direction

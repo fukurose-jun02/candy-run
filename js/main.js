@@ -1,7 +1,9 @@
 const config = {
   type: Phaser.AUTO,
-  width: 800,
-  height: 600,
+  parent: 'game',
+  // Initial size — actual size follows the window because of Scale.RESIZE below
+  width: window.innerWidth,
+  height: window.innerHeight,
   backgroundColor: '#f8e0ff',
   physics: {
     default: 'arcade',
@@ -12,8 +14,15 @@ const config = {
   },
   scene: [GameScene],
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
+    // RESIZE makes the game fill the whole screen (phone / tablet / desktop)
+    // instead of leaving big letterbox bars like FIT does.
+    mode: Phaser.Scale.RESIZE,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: window.innerWidth,
+    height: window.innerHeight
+  },
+  input: {
+    activePointers: 3 // allow multi-touch (joystick + taps)
   },
   render: {
     pixelArt: false,

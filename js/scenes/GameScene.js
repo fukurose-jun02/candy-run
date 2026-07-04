@@ -54,6 +54,9 @@ class GameScene extends Phaser.Scene {
     this.candies = this.physics.add.staticGroup();
     this._placeCandies(gen.getPassageTiles(this.TILE));
 
+    // Touch joystick for mobile (stays hidden / no-op on desktop)
+    this.touchControls = new TouchControls(this);
+
     // Player
     const start = gen.getStartPosition(this.TILE);
     this.player = new Player(this, start.x, start.y, this.TILE);

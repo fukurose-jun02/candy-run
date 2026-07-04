@@ -9,11 +9,12 @@ class Worm {
    * @param {number} y - start y
    * @param {number} tileSize
    * @param {number} bodyCount - number of body segments (3-5)
+   * @param {number} speed - chase speed in px/s (higher levels pass more)
    */
-  constructor(scene, x, y, tileSize, bodyCount = 4) {
+  constructor(scene, x, y, tileSize, bodyCount = 4, speed = 90) {
     this.scene = scene;
     this.tileSize = tileSize;
-    this.speed = 90; // gentle speed so children are not cornered
+    this.speed = speed;
     this.catchRadius = tileSize * 0.55;
 
     // History buffer: stores past positions of the head for trailing segments

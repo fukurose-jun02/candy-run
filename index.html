@@ -20,24 +20,79 @@
       background: #1a0a2e;
       overscroll-behavior: none;
     }
+    /* Fixed full-viewport container so the canvas can never collapse to 0 height
+       (percentage-height chains are unreliable on some mobile browsers). */
     #game {
-      width: 100%;
-      height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
     }
     canvas {
       display: block;
       touch-action: none;
     }
+    /* Shown only if something fails to load, so the player never just sees a
+       blank screen with no explanation. */
+    #error {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      padding: 24px;
+      color: #fff;
+      background: #1a0a2e;
+      font-family: Meiryo, "Hiragino Sans", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    #error h1 { font-size: 18px; margin-bottom: 12px; color: #ff88cc; }
   </style>
 </head>
 <body>
   <div id="game"></div>
+  <div id="error"></div>
+  <script>
+    // Surface any load/runtime error on screen instead of showing a blank page.
+    (function () {
+      function show(msg) {
+        var el = document.getElementById('error');
+        if (!el) return;
+        el.style.display = 'block';
+        el.textContent = (el.textContent || '') + msg + '\n';
+        if (!el.querySelector('h1')) {
+          var h = document.createElement('h1');
+          h.textContent = 'エラーが発生しました';
+          el.insertBefore(h, el.firstChild);
+        }
+      }
+      window.__gameError = show;
+      window.addEventListener('error', function (e) {
+        show((e && e.message) ? e.message : String(e));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        show('Promise error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+      });
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+  <script>
+    // If the CDN is blocked/unreachable, Phaser is undefined — tell the player.
+    if (typeof Phaser === 'undefined') {
+      window.__gameError('Phaser を読み込めませんでした（インターネット接続をご確認ください）。');
+    }
+  </script>
   <script src="js/MazeGenerator.js"></script>
+  <script src="js/TextureFactory.js"></script>
   <script src="js/TouchControls.js"></script>
   <script src="js/Player.js"></script>
   <script src="js/Worm.js"></script>
+  <script src="js/scenes/TitleScene.js"></script>
   <script src="js/scenes/GameScene.js"></script>
+  <script src="js/scenes/ResultScene.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

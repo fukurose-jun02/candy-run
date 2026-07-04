@@ -328,6 +328,15 @@ class GameScene extends Phaser.Scene {
 
   _collectCandy(playerSprite, candy) {
     if (this.frozen) return;
+
+    // overlap fires every frame while bodies touch. The candy only visually
+    // disappears after a 300ms tween, so without this guard a single candy
+    // would be counted ~18 times. Mark it collected and disable its body so it
+    // counts exactly once.
+    if (candy.collected) return;
+    candy.collected = true;
+    if (candy.body) candy.body.enable = false;
+
     this.score++;
     this.candyPitchIndex = Math.min(this.candyPitchIndex + 1, this.candyPitches.length - 1);
 

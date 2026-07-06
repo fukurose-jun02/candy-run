@@ -112,6 +112,12 @@ class GameScene extends Phaser.Scene {
       this
     );
 
+    // Physics world bounds must match the maze, not the screen. With
+    // Scale.RESIZE the default bounds equal the window size, and the player's
+    // collideWorldBounds turned that into an invisible wall about one screen
+    // down/right ("can't move further even though there's no block").
+    this.physics.world.setBounds(0, 0, W, H);
+
     // Camera — smooth follow
     this.cameras.main.setBounds(0, 0, W, H);
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);

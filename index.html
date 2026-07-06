@@ -85,14 +85,19 @@
       window.__gameError('Phaser を読み込めませんでした（インターネット接続をご確認ください）。');
     }
   </script>
-  <script src="js/MazeGenerator.js"></script>
-  <script src="js/TextureFactory.js"></script>
-  <script src="js/TouchControls.js"></script>
-  <script src="js/Player.js"></script>
-  <script src="js/Worm.js"></script>
-  <script src="js/scenes/TitleScene.js"></script>
-  <script src="js/scenes/GameScene.js"></script>
-  <script src="js/scenes/ResultScene.js"></script>
-  <script src="js/main.js"></script>
+  <!-- Cache busting: bump GAME_VERSION (and the ?v= below) on every release so
+       browsers and the GitHub Pages CDN can never serve stale JS against a
+       fresh HTML. The title screen shows this so you can tell at a glance
+       which build a device is running. -->
+  <script>window.GAME_VERSION = '20260706a';</script>
+  <script src="js/MazeGenerator.js?v=20260706a"></script>
+  <script src="js/TextureFactory.js?v=20260706a"></script>
+  <script src="js/TouchControls.js?v=20260706a"></script>
+  <script src="js/Player.js?v=20260706a"></script>
+  <script src="js/Worm.js?v=20260706a"></script>
+  <script src="js/scenes/TitleScene.js?v=20260706a"></script>
+  <script src="js/scenes/GameScene.js?v=20260706a"></script>
+  <script src="js/scenes/ResultScene.js?v=20260706a"></script>
+  <script src="js/main.js?v=20260706a"></script>
 </body>
 </html>

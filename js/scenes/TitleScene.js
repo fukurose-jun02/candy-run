@@ -120,6 +120,15 @@ class TitleScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.root.add(tap);
     this.tweens.add({ targets: tap, alpha: 0.25, duration: 600, yoyo: true, repeat: -1 });
+
+    // Build version in the corner, so it's obvious which release a device is
+    // actually running (stale-cache problems become visible at a glance).
+    if (window.GAME_VERSION) {
+      const ver = this.add.text(W - 6, H - 6, 'v' + window.GAME_VERSION, {
+        fontSize: '12px', fontFamily: CANDY_FONT, color: '#bb88cc'
+      }).setOrigin(1, 1).setAlpha(0.8);
+      this.root.add(ver);
+    }
   }
 
   _start() {

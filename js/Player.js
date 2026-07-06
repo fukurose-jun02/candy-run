@@ -95,6 +95,12 @@ class Player {
       vy = touch.y * this.speed;
     }
 
+    // Cornering assist: near-cardinal input is snapped to a clean up/down/left/
+    // right, and the player is gently pulled onto the corridor centerline of the
+    // cross axis. This stops the character snagging on wall corners when turning
+    // — the "can't get through here" feeling, especially with a touch joystick.
+    ({ vx, vy } = this._applyCorneringAssist(vx, vy));
+
     sprite.body.setVelocity(vx, vy);
 
     // Flip sprite based on horizontal direction
@@ -116,6 +122,38 @@ class Player {
       this.starEmitter.stop();
       this.heartEmitter.stop();
     }
+  }
+
+  /**
+   * Snap near-cardinal movement to a pure cardinal direction and steer the
+   * player toward the center of the corridor on the perpendicular axis, so
+   * turns line up and corners don't catch. Genuine diagonal input (both axes
+   * comparable, e.g. in open rooms) is left untouched.
+   */
+  _applyCorneringAssist(vx, vy) {
+    if (vx === 0 && vy === 0) return { vx, vy };
+
+    const T = this.tileSize;
+    const speed = this.speed;
+    const ax = Math.abs(vx);
+    const ay = Math.abs(vy);
+    const DIAG_RATIO = 0.55;      // weaker axis below this fraction => cardinal
+    const PULL = 6;               // how strongly to steer onto the centerline
+
+    const centerOf = (v) => Math.floor(v / T) * T + T / 2;
+
+    if (ax >= ay && ay <= ax * DIAG_RATIO) {
+      // Moving horizontally: full horizontal speed, ease Y toward row center.
+      vx = Math.sign(vx) * speed;
+      const targetY = centerOf(this.sprite.y);
+      vy = Phaser.Math.Clamp((targetY - this.sprite.y) * PULL, -speed, speed);
+    } else if (ay > ax && ax <= ay * DIAG_RATIO) {
+      // Moving vertically: full vertical speed, ease X toward column center.
+      vy = Math.sign(vy) * speed;
+      const targetX = centerOf(this.sprite.x);
+      vx = Phaser.Math.Clamp((targetX - this.sprite.x) * PULL, -speed, speed);
+    }
+    return { vx, vy };
   }
 
   // Teleport player to a safe position (used when caught by worm)

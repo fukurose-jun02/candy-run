@@ -1,103 +1,25 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Candy Run - Escape & Collect</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-      -webkit-touch-callout: none;
-      user-select: none;
-    }
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #1a0a2e;
-      overscroll-behavior: none;
-    }
-    /* Fixed full-viewport container so the canvas can never collapse to 0 height
-       (percentage-height chains are unreliable on some mobile browsers). */
-    #game {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-    }
-    canvas {
-      display: block;
-      touch-action: none;
-    }
-    /* Shown only if something fails to load, so the player never just sees a
-       blank screen with no explanation. */
-    #error {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      padding: 24px;
-      color: #fff;
-      background: #1a0a2e;
-      font-family: Meiryo, "Hiragino Sans", Arial, sans-serif;
-      font-size: 15px;
-      line-height: 1.6;
-      overflow: auto;
-      white-space: pre-wrap;
-    }
-    #error h1 { font-size: 18px; margin-bottom: 12px; color: #ff88cc; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>キャンディラン（おひっこししました）</title>
+<meta http-equiv="refresh" content="0; url=https://fukurose-jun02.github.io/my-games/candy-run/">
+<link rel="canonical" href="https://fukurose-jun02.github.io/my-games/candy-run/">
+<script>location.replace("https://fukurose-jun02.github.io/my-games/candy-run/" + location.search + location.hash);</script>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #fff5fa; color: #4a3b45; font-family: 'Hiragino Maru Gothic ProN', 'Hiragino Sans', sans-serif; text-align: center; padding: 16px; box-sizing: border-box; }
+  .box { max-width: 420px; }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  p { font-size: 15px; line-height: 1.7; margin: 0 0 20px; }
+  a { display: inline-block; padding: 14px 28px; border-radius: 999px; background: #f06ab0; color: #fff; font-weight: bold; text-decoration: none; font-size: 17px; }
+</style>
 </head>
 <body>
-  <div id="game"></div>
-  <div id="error"></div>
-  <script>
-    // Surface any load/runtime error on screen instead of showing a blank page.
-    (function () {
-      function show(msg) {
-        var el = document.getElementById('error');
-        if (!el) return;
-        el.style.display = 'block';
-        el.textContent = (el.textContent || '') + msg + '\n';
-        if (!el.querySelector('h1')) {
-          var h = document.createElement('h1');
-          h.textContent = 'エラーが発生しました';
-          el.insertBefore(h, el.firstChild);
-        }
-      }
-      window.__gameError = show;
-      window.addEventListener('error', function (e) {
-        show((e && e.message) ? e.message : String(e));
-      });
-      window.addEventListener('unhandledrejection', function (e) {
-        show('Promise error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
-      });
-    })();
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-  <script>
-    // If the CDN is blocked/unreachable, Phaser is undefined — tell the player.
-    if (typeof Phaser === 'undefined') {
-      window.__gameError('Phaser を読み込めませんでした（インターネット接続をご確認ください）。');
-    }
-  </script>
-  <!-- Cache busting: bump GAME_VERSION (and the ?v= below) on every release so
-       browsers and the GitHub Pages CDN can never serve stale JS against a
-       fresh HTML. The title screen shows this so you can tell at a glance
-       which build a device is running. -->
-  <script>window.GAME_VERSION = '20260706a';</script>
-  <script src="js/MazeGenerator.js?v=20260706a"></script>
-  <script src="js/TextureFactory.js?v=20260706a"></script>
-  <script src="js/TouchControls.js?v=20260706a"></script>
-  <script src="js/Player.js?v=20260706a"></script>
-  <script src="js/Worm.js?v=20260706a"></script>
-  <script src="js/scenes/TitleScene.js?v=20260706a"></script>
-  <script src="js/scenes/GameScene.js?v=20260706a"></script>
-  <script src="js/scenes/ResultScene.js?v=20260706a"></script>
-  <script src="js/main.js?v=20260706a"></script>
+<div class="box">
+  <h1>キャンディラン は おひっこし しました</h1>
+  <p>あたらしい ばしょで あそべます。<br>うごかないときは したの ボタンを おしてね。</p>
+  <a href="https://fukurose-jun02.github.io/my-games/candy-run/">あたらしい ばしょへ</a>
+</div>
 </body>
 </html>

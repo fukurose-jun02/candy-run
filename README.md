@@ -1,3 +1,6 @@
+> **このゲームはお引越ししました。** 今後は [まとめサイト my-games](https://github.com/fukurose-jun02/my-games) の `candy-run/` フォルダで管理しています。
+> 遊ぶ：https://fukurose-jun02.github.io/my-games/candy-run/
+
 # 🍬 キャンディラン (Candy Run)
 
 お菓子いっぱいの迷路で、いもむしから逃げながらおやつを集める、**幼児向けのかわいい鬼ごっこゲーム**です。スマホでもPCでも、ブラウザだけで遊べます。
